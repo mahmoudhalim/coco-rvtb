@@ -38,6 +38,21 @@ class AluSeqItem(uvm_sequence_item):
         OP: {self.op.name} ({self.op.value}) B: 0x{self.B:02x}"
 
 
+class PrimeSeqItem(AluSeqItem):
+    def __init__(self, name, aa, bb, op):
+        super().__init__(name, aa, bb, op)
+        self.primeNumbers = [i for i in range(0, 256) if self.is_prime(i)]
+    def randomize_operands(self):
+        self.A = random.choice(self.primeNumbers)
+        self.B = random.choice(self.primeNumbers)
+
+    def is_prime(self, x):
+        count = 0
+        for i in range(int(x/2)):
+            if x % (i+1) == 0:
+                count = count+1
+        return count == 1
+
 class RandomSeq(uvm_sequence):
     async def body(self):
         for op in list(Ops):
@@ -61,8 +76,10 @@ class TestAllSeq(uvm_sequence):
         seqr = ConfigDB().get(None, "", "SEQR")
         random = RandomSeq("random")
         max = MaxSeq("max")
+        prime = PrimeSeq("prime")
         await random.start(seqr)
         await max.start(seqr)
+        await prime.start(seqr)
 
 
 class TestAllForkSeq(uvm_sequence):
@@ -134,7 +151,14 @@ class FibonacciSeq(uvm_sequence):
         uvm_root().logger.info("Fibonacci Sequence: " + str(fib_list))
         uvm_root().set_logging_level_hier(CRITICAL)
 
-
+class PrimeSeq(uvm_sequence):
+    async def body(self):
+        for _ in range(100):
+            cmd_tr = PrimeSeqItem("cmd_tr", None, None, list(Ops)[0])
+            await self.start_item(cmd_tr)
+            cmd_tr.randomize()
+            await self.finish_item(cmd_tr)
+               
 class Driver(uvm_driver):
     def build_phase(self):
         self.ap = uvm_analysis_port("ap", self)
@@ -297,3 +321,18 @@ class AluTestErrors(AluTest):
 
     def start_of_simulation_phase(self):
         ConfigDB().set(None, "*", "CREATE_ERRORS", True)
+        
+@pyuvm.test()
+class PrimeTest(uvm_test):
+    
+    def build_phase(self):
+        self.env = AluEnv("env", self)
+
+    def end_of_elaboration_phase(self):
+        self.prime = PrimeSeq.create("prime")
+        self.seqr = ConfigDB().get(None, "", "SEQR")
+        
+    async def run_phase(self):
+        self.raise_objection()
+        await self.prime.start(self.seqr)
+        self.drop_objection()
